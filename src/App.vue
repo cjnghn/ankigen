@@ -13,6 +13,7 @@ import {
   PlusIcon,
   MinusIcon,
 } from "@heroicons/vue/24/solid";
+import OpenAI from "openai";
 
 const { t, locale } = useI18n();
 
@@ -60,39 +61,38 @@ const getDefinition = async () => {
   error.value = "";
 
   try {
+    const client = new OpenAI({
+      apiKey: openaiApiKey.value,
+      dangerouslyAllowBrowser: true,
+    });
     const systemPromptContent = t("systemPrompt", {
       language: currentLanguage.value.name,
     });
-    console.log(systemPromptContent);
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiApiKey.value}`,
+    const chatCompletion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: systemPromptContent,
+        },
+        {
+          role: "user",
+          content: wordInput.value,
+        },
+      ],
+      response_format: {
+        type: "json_object",
       },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        format: "json_object",
-        messages: [
-          {
-            role: "system",
-            content: systemPromptContent,
-          },
-          {
-            role: "user",
-            content: wordInput.value,
-          },
-        ],
-      }),
     });
 
-    if (!response.ok) throw new Error("API request failed");
+    if (!chatCompletion.choices[0].message.content) {
+      error.value = t("noDefinitionFound");
+      return;
+    }
 
-    const data = await response.json();
-    const parsedContent = JSON.parse(
-      data.choices[0].message.content.replace(/\\"/g, '"')
-    );
+    const parsedContent = JSON.parse(chatCompletion.choices[0].message.content);
+
     wordDefinitions.value.unshift({ word: wordInput.value, ...parsedContent });
     wordInput.value = "";
   } catch (err) {
